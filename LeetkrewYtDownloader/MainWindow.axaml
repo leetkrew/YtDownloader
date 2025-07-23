@@ -1,0 +1,39 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LeetkrewYtDownloader.MainWindow"
+        Title="Leetkrew YouTube Downloader"
+        Width="500" Height="400">
+
+    <!-- Define 4 rows: Auto for URL, Auto for button, Auto for progress, and * for logs -->
+    <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10">
+
+        <!-- URL row -->
+        <TextBlock Grid.Row="0" Text="Enter YouTube URL:"/>
+        <TextBox   Grid.Row="0" Name="UrlBox"
+                   Margin="0,20,0,0"
+                   Watermark="https://youtube.com/..."
+                   HorizontalAlignment="Stretch"/>
+
+        <!-- Download button row -->
+        <Button    Grid.Row="1" Name="DownloadButton"
+                   Content="Download"
+                   Click="Download_Click"
+                   HorizontalAlignment="Left"
+                   Width="100"/>
+
+        <!-- Progress bar row -->
+        <ProgressBar Grid.Row="2" Name="ProgressBar"
+                     Minimum="0" Maximum="100"
+                     Height="20"
+                     HorizontalAlignment="Stretch"/>
+
+        <!-- Logs row (the star-sized row) -->
+        <TextBox   Grid.Row="3" Name="Logs"
+                   AcceptsReturn="True"
+                   FontSize="10" 
+                   IsReadOnly="True"
+                   TextWrapping="Wrap"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   HorizontalAlignment="Stretch"/>
+    </Grid>
+</Window>
