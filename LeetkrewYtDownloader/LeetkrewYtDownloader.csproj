@@ -6,6 +6,11 @@
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+        <AppName>$(MSBuildProjectName)</AppName>
+        
+        <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+        <SelfContained>true</SelfContained>
+        <PublishSingleFile>true</PublishSingleFile>
     </PropertyGroup>
 
     <ItemGroup>
@@ -18,9 +23,29 @@
             <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
-        <PackageReference Include="SharpMp4Parser" Version="0.0.5" />
         <PackageReference Include="Xabe.FFmpeg" Version="6.0.1" />
         <PackageReference Include="Xabe.FFmpeg.Downloader" Version="6.0.1" />
         <PackageReference Include="YoutubeExplode" Version="6.5.4" />
+
+        <!-- include all the files in ffmpeg-bin/ under your publish output -->
+        <None Include="ffmpeg-bin\**\*.*">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+        </None>
+        
     </ItemGroup>
+
+    <Target Name="AfterPublish" AfterTargets="Publish">
+        <!-- 0) Ensure scripts are executable -->
+        <Exec Command="chmod +x scripts/make-macos-app.sh scripts/make-dmg.sh" WorkingDirectory="$(MSBuildProjectDirectory)" />
+
+        <!-- 1) Build the .app bundle -->
+        <Exec Command="bash scripts/make-macos-app.sh $(PublishDir)" />
+
+        <!-- 2) Build the .dmg -->
+        <Exec Command="bash scripts/make-dmg.sh $(AppName).app $(AppName).dmg" />
+
+        <!-- 3) Copy the DMG into the publish output folder -->
+        <Copy SourceFiles="$(MSBuildProjectDirectory)/$(AppName).dmg" DestinationFolder="$(PublishDir)" />
+    </Target>
 </Project>

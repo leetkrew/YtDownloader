@@ -2,7 +2,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="LeetkrewYtDownloader.MainWindow"
         Title="Leetkrew YouTube Downloader"
-        Width="500" Height="400">
+        Width="500" Height="400"
+        MinWidth="500" MinHeight="400"
+        MaxWidth="1280" MaxHeight="720">
 
     <!-- Define 4 rows: Auto for URL, Auto for button, Auto for progress, and * for logs -->
     <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10">
