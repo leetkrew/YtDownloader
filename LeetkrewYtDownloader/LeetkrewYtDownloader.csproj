@@ -27,12 +27,16 @@
         <PackageReference Include="Xabe.FFmpeg.Downloader" Version="6.0.1" />
         <PackageReference Include="YoutubeExplode" Version="6.5.4" />
 
-        <!-- include all the files in ffmpeg-bin/ under your publish output -->
-        <None Include="ffmpeg-bin\**\*.*">
+        <Content Include="ffmpeg\**\*.*">
+            <!-- copy into both build AND publish output -->
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-            <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-        </None>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </Content>
         
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="ffmpeg\" />
     </ItemGroup>
 
     <Target Name="AfterPublish" AfterTargets="Publish">

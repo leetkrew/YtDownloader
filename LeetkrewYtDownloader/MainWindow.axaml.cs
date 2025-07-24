@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using YoutubeExplode;
@@ -7,13 +8,13 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using LeetkrewYtDownloader.Models;
 using Xabe.FFmpeg;
-using Xabe.FFmpeg.Downloader;
 
 namespace LeetkrewYtDownloader;
 public partial class MainWindow : Window
@@ -26,9 +27,11 @@ public partial class MainWindow : Window
         );
     private static readonly string SettingsFile =
         Path.Combine(SettingsDir, "windowSettings.json");
+    private double _videoDurationSec;
     
     public MainWindow()
     {
+        _videoDurationSec = 0;
         InitializeComponent();
         // 1) Load last size if it exists
         TryLoadWindowSize();
@@ -226,37 +229,43 @@ public partial class MainWindow : Window
             );
             Logs.Text += $"[Info] Downloaded to: {tempVideo} & {tempAudio}\n";
 
-            // 8) Ensure FFmpeg is available
-            //Logs.Text += "[Info] Ensuring FFmpeg is available…\n";
-            var exeDir   = AppContext.BaseDirectory;
-            var ffmpegDir = Path.Combine(exeDir, "ffmpeg‑bin");
+            // 8) figure out ffmpeg.exe location (e.g. bundled or Homebrew)
+            var ffmpegExe = Path.Combine(AppContext.BaseDirectory, "ffmpeg", "ffmpeg");
+            // you can also detect /opt/homebrew/bin/ffmpeg if you prefer
 
-            // clear it out so Xabe will re‑populate it:
-            if (Directory.Exists(ffmpegDir))
-                Directory.Delete(ffmpegDir, recursive: true);
+            // 9) probe your video to get its duration:
+            var mediaInfo = await FFmpeg.GetMediaInfo(tempVideo);
+            _videoDurationSec = mediaInfo.Duration.TotalSeconds;
 
-            // now create & fetch into it
-            await FFmpegDownloader.GetLatestVersion(FFmpegVersion.Full);
+            // 10) run the external ffmpeg
+            var mergeProgress = new Progress<double>(p =>
+                Dispatcher.UIThread.Post(() => ProgressBar.Value = p * 100)
+            );
+ 
+            await RunFfmpegMergeAsync(
+                ffmpegExe,
+                tempVideo,
+                tempAudio,
+                muxedFile ?? throw new InvalidOperationException(),
+                mergeProgress,
+                _ => Dispatcher.UIThread.Post(() => { })
+            );
             
-            Logs.Text += $"[Info] Rendering...\n";
-
-            // 9) Mux with FFmpeg
-            var conversion = await FFmpeg.Conversions.FromSnippet.AddAudio(tempVideo, tempAudio, muxedFile);
-            conversion.OnProgress += (_, prog) => Dispatcher.UIThread.Post(() => ProgressBar.Value = prog.Percent);
-            await conversion.Start();
-            Dispatcher.UIThread.Post(() => ProgressBar.Value = 100);
-
-            Logs.Text += $"[Info] Mux complete: {muxedFile}\n";
-
-            // 10) Delete temp files
             File.Delete(tempVideo);
             File.Delete(tempAudio);
-            Logs.Text += "[Info] Cleanup Complete.\n";
+            
+            Dispatcher.UIThread.Post(() =>
+                Logs.Text += "[Info] Deleted temporary video/audio files.\n"
+            );
+            
+            ProgressBar.Value = 100;
+            Logs.Text += $"[Info] Remux complete: {muxedFile}\n";
         }
         catch (Exception ex)
         {
             await ShowDialog("Error:\n" + ex.Message);
             Logs.Text += $"[Error] {ex.Message}\n";
+            Logs.Text += $"[Stack Trace] {ex}\n";
         }
         finally
         {
@@ -265,6 +274,69 @@ public partial class MainWindow : Window
         }
     }
 
+    private Task RunFfmpegMergeAsync(
+        string ffmpegExe,
+        string videoPath,
+        string audioPath,
+        string outputPath,
+        IProgress<double> progress,
+        Action<string> log)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+
+        // ffmpeg arguments: two inputs, stream‐copy codec, overwrite output
+        var args = $"-i \"{videoPath}\" -i \"{audioPath}\" -c copy -y \"{outputPath}\"";
+
+        var psi = new ProcessStartInfo
+        {
+            FileName               = ffmpegExe,
+            Arguments              = args,
+            RedirectStandardError  = true,
+            RedirectStandardOutput = true,
+            UseShellExecute        = false,
+            CreateNoWindow         = true
+        };
+
+        var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+
+        proc.ErrorDataReceived += (_, e) =>
+        {
+            if (string.IsNullOrWhiteSpace(e.Data))
+                return;
+
+            log($"[ffmpeg] {e.Data}\n");
+
+            // Look for "time=HH:MM:SS.millis" in stderr
+            var m = Regex.Match(e.Data, @"time=(\d+):(\d+):(\d+\.?\d*)");
+            if (m.Success)
+            {
+                double hours   = double.Parse(m.Groups[1].Value);
+                double minutes = double.Parse(m.Groups[2].Value);
+                double seconds = double.Parse(m.Groups[3].Value);
+                // total seconds elapsed
+                double elapsed = hours * 3600 + minutes * 60 + seconds;
+
+                // We need the total video duration to compute percent.
+                // Let's assume you captured that earlier:
+                double totalSec = _videoDurationSec; 
+                progress.Report(elapsed / totalSec);
+            }
+        };
+
+        proc.Exited += (_, _) =>
+        {
+            if (proc.ExitCode == 0)
+                tcs.SetResult(true);
+            else
+                tcs.SetException(new Exception($"ffmpeg exited with code {proc.ExitCode}"));
+            proc.Dispose();
+        };
+
+        proc.Start();
+        proc.BeginErrorReadLine();
+        return tcs.Task;
+    }
+    
     /// <summary>
     /// Shows a simple one‐button dialog with the given message.
     /// </summary>
