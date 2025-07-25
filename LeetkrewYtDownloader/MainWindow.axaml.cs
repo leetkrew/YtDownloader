@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using YoutubeExplode;
@@ -14,7 +15,6 @@ using Avalonia;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using LeetkrewYtDownloader.Models;
-using Xabe.FFmpeg;
 
 namespace LeetkrewYtDownloader;
 public partial class MainWindow : Window
@@ -233,9 +233,10 @@ public partial class MainWindow : Window
             var ffmpegExe = Path.Combine(AppContext.BaseDirectory, "ffmpeg", "ffmpeg");
             // you can also detect /opt/homebrew/bin/ffmpeg if you prefer
 
-            // 9) probe your video to get its duration:
-            var mediaInfo = await FFmpeg.GetMediaInfo(tempVideo);
-            _videoDurationSec = mediaInfo.Duration.TotalSeconds;
+            // 9) probe your video to get its duration via ffprobe
+            Logs.Text += "[Info] Probing video duration…\n";
+            _videoDurationSec = await GetVideoDurationAsync(tempVideo);
+            Logs.Text += $"[Info] Duration: {_videoDurationSec:F1}s\n";
 
             // 10) run the external ffmpeg
             var mergeProgress = new Progress<double>(p =>
@@ -274,6 +275,38 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task<double> GetVideoDurationAsync(string videoPath)
+    {
+        // Build ffprobe args: JSON output with format.duration
+        var psi = new ProcessStartInfo
+        {
+            FileName            = Path.Combine(AppContext.BaseDirectory, "ffmpeg", "ffprobe"),
+            Arguments           = $"-v quiet -print_format json -show_format \"{videoPath}\"",
+            RedirectStandardOutput = true,
+            UseShellExecute     = false,
+            CreateNoWindow      = true
+        };
+    
+        using var proc = Process.Start(psi);
+        if (proc == null)
+            throw new InvalidOperationException("Could not start ffprobe.");
+    
+        string json = await proc.StandardOutput.ReadToEndAsync();
+        await proc.WaitForExitAsync();
+    
+        using var doc = JsonDocument.Parse(json);
+        // JSON: { "format": { "duration": "123.456", … } }
+        var durProp = doc.RootElement
+            .GetProperty("format")
+            .GetProperty("duration")
+            .GetString();
+        if (!double.TryParse(durProp, NumberStyles.Any, CultureInfo.InvariantCulture, out var seconds))
+            throw new InvalidOperationException("Failed to parse ffprobe duration.");
+    
+        return seconds;
+    }
+
+    
     private Task RunFfmpegMergeAsync(
         string ffmpegExe,
         string videoPath,
