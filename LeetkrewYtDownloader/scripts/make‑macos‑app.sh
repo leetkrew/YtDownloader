@@ -1,44 +1,68 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# $1 = path to your publish folder
-publish_dir="$1"
-# e.g. /…/bin/Release/net8.0/osx-x64/publish
-if [[ ! -d "$publish_dir" ]]; then
-  echo "Publish directory not found: $publish_dir" >&2
-  exit 1
-fi
+# If you want to pass the publish directory as an argument, default to cwd
+publishDir="${1:-$(pwd)}"
+appName="LeetkrewYtDownloader"
 
-# derive your app name from the base folder (or override manually)
-app_name="$(basename "$(dirname "$publish_dir")")"  
-# e.g. "LeetkrewYtDownloader"
+# Compose the .app bundle path inside your publish folder
+appBundle="$publishDir/${appName}.app"
+contents="$appBundle/Contents"
 
-bundle_name="${app_name}.app"
-rm -rf "$bundle_name"
+# 1) create bundle layout
+mkdir -p "$contents"/{MacOS,Resources}
 
-# Create .app structure
-mkdir -p "$bundle_name/Contents/MacOS"
-cp -R "$publish_dir/"* "$bundle_name/Contents/MacOS/"
+# 2) copy your published executable
+cp "$publishDir/$appName" "$contents/MacOS/$appName"
+chmod +x "$contents/MacOS/$appName"
 
-# Write a minimal Info.plist
-cat > "$bundle_name/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+# 3) write Info.plist
+cat > "$contents/Info.plist" <<EOF
 <plist version="1.0">
-<dict>
-  <key>CFBundleName</key>
-  <string>$app_name</string>
-  <key>CFBundleExecutable</key>
-  <string>$app_name</string>
-  <key>CFBundleIdentifier</key>
-  <string>com.yourcompany.$app_name</string>
-  <key>CFBundleVersion</key>
-  <string>1.0</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-</dict>
+  <dict>
+    <!-- Basic identity -->
+    <key>CFBundleName</key>
+    <string>Leetkrew YT Downloader</string>
+    <key>CFBundleDisplayName</key>
+    <string>Leetkrew YouTube Downloader</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.rjregalado.leetkrewytdownloader</string>
+
+    <!-- Versioning -->
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+
+    <!-- Executable info -->
+    <key>CFBundleExecutable</key>
+    <string>LeetkrewYtDownloader</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <!-- Localization and minimum OS -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.13.0</string>
+
+    <!-- High‑DPI support -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- App icon (if you bundle one) -->
+    <!-- put LeetkrewIcon.icns into Resources/ -->
+    <key>CFBundleIconFile</key>
+    <string>LeetkrewIcon.icns</string>
+
+    <!-- Supported platforms -->
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+      <string>MacOSX</string>
+    </array>
+  </dict>
 </plist>
 EOF
 
-echo "✅ Created macOS bundle: $bundle_name"
+echo "✔️  Built app bundle at: $appBundle"
+

@@ -1,22 +1,38 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
-# $1 = your .app bundle name (e.g. LeetkrewYtDownloader.app)
-# $2 = desired .dmg output name (e.g. LeetkrewYtDownloader.dmg)
-app_bundle="$1"
-dmg_name="${2:-$(basename "$app_bundle" .app).dmg}"
+APP_NAME="LeetkrewYtDownloader"
+VOL_NAME="Leetkrew YouTube Downloader"
+TMP_DMG="${APP_NAME}.tmp.dmg"
+FINAL_DMG="${APP_NAME}.dmg"
+SRC_APP="${APP_NAME}.app"
+MOUNT_DIR="/Volumes/${VOL_NAME}"
 
-if [[ ! -d "$app_bundle" ]]; then
-  echo "App bundle not found: $app_bundle" >&2
-  exit 1
-fi
-
-echo "🔨 Building DMG: $dmg_name"
+# 1) Create a read/write image
 hdiutil create \
-  -volname "$(basename "$app_bundle" .app)" \
-  -srcfolder "$app_bundle" \
-  -format UDZO \
+  -volname "$VOL_NAME" \
+  -srcfolder "$SRC_APP" \
   -ov \
-  "$dmg_name"
+  -format UDRW \
+  "$TMP_DMG"
 
-echo "✅ Created DMG: $dmg_name"
+# 2) Attach it at exactly our mountpoint
+hdiutil attach "$TMP_DMG" \
+  -mountpoint "$MOUNT_DIR" \
+  -nobrowse \
+  -readwrite
+
+# 3) (Optional) Add Applications shortcut
+ln -s /Applications "$MOUNT_DIR/Applications"
+
+# 4) Detach and convert to a compressed, read‑only image
+hdiutil detach "$MOUNT_DIR"
+hdiutil convert "$TMP_DMG" \
+  -format UDZO \
+  -imagekey zlib-level=9 \
+  -o "$FINAL_DMG"
+
+# 5) Clean up
+rm "$TMP_DMG"
+
+echo "✅ Created $FINAL_DMG"
