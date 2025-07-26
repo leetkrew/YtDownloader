@@ -28,20 +28,20 @@ public partial class MainWindow : Window
     private static readonly string SettingsFile =
         Path.Combine(SettingsDir, "windowSettings.json");
     private double _videoDurationSec;
+    private string _muxedFile = ""; 
     
     public MainWindow()
     {
         _videoDurationSec = 0;
         InitializeComponent();
-        // 1) Load last size if it exists
         TryLoadWindowSize();
-
-        // 2) When the user closes or resizes the window, remember it
         this.Closing   += OnWindowClosing;
-        // Save on every resize:
         this.SizeChanged += (_, _) => SaveWindowSize();
         
+        #if DEBUG
         UrlBox.Text = @"https://www.youtube.com/watch?v=0v37NNdjWKU";
+        #endif
+        
         Logs.IsReadOnly = true;
     }
 
@@ -49,21 +49,18 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (File.Exists(SettingsFile))
-            {
-                var json = File.ReadAllText(SettingsFile);
-                var s    = JsonSerializer.Deserialize<WindowSizeRecord>(json);
-                if (s is not null)
-                {
-                    // only apply if within your max constraints
-                    Width  = Math.Min(s.Width,  MaxWidth);
-                    Height = Math.Min(s.Height, MaxHeight);
-                }
-            }
+            if (!File.Exists(SettingsFile)) return;
+            
+            var json = File.ReadAllText(SettingsFile);
+            var s    = JsonSerializer.Deserialize<WindowSizeRecord>(json);
+            if (s is null) return;
+                
+            Width  = Math.Min(s.Width,  MaxWidth);
+            Height = Math.Min(s.Height, MaxHeight);
         }
         catch
         {
-            // ignore any errors (corrupt file, etc.)
+            // ignore
         }
     }
 
@@ -71,7 +68,6 @@ public partial class MainWindow : Window
     {
         try
         {
-            // ensure directory
             Directory.CreateDirectory(SettingsDir);
 
             var s = new WindowSizeRecord
@@ -84,13 +80,12 @@ public partial class MainWindow : Window
         }
         catch
         {
-            // ignore IO errors
+            // ignore
         }
     }
 
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
     {
-        // explicitly save one last time
         SaveWindowSize();
     }
     
@@ -99,7 +94,9 @@ public partial class MainWindow : Window
         DownloadButton.IsEnabled = false;
         UrlBox.IsEnabled = false;
         Logs.Text = string.Empty;
-
+        ShowFileButton.IsEnabled = false;
+        _muxedFile = string.Empty;
+        
         try
         {
             #if DEBUG
@@ -193,12 +190,12 @@ public partial class MainWindow : Window
                 return;  // user canceled
             }
 
-            var muxedFile = result.TryGetLocalPath();
+            _muxedFile = result.TryGetLocalPath() ?? throw new InvalidOperationException();
             
-            Logs.Text += $"[Info] Saving to: {muxedFile}\n";
+            Logs.Text += $"[Info] Saving to: {_muxedFile}\n";
 
             // Determine temp file locations in same directory
-            var outputDir = Path.GetDirectoryName(muxedFile) ?? Directory.GetCurrentDirectory();
+            var outputDir = Path.GetDirectoryName(_muxedFile) ?? Directory.GetCurrentDirectory();
             var tempVideo = Path.Combine(outputDir, titlePart + "_video." + videoStream.Container.Name);
             var tempAudio = Path.Combine(outputDir, titlePart + "_audio." + audioStream.Container.Name);
 
@@ -231,7 +228,7 @@ public partial class MainWindow : Window
 
             // 8) figure out ffmpeg.exe location (e.g. bundled or Homebrew)
             var ffmpegExe = Path.Combine(AppContext.BaseDirectory, "ffmpeg", "ffmpeg");
-            // you can also detect /opt/homebrew/bin/ffmpeg if you prefer
+            // TODO: detect /opt/homebrew/bin/ffmpeg if you prefer
 
             // 9) probe your video to get its duration via ffprobe
             Logs.Text += "[Info] Probing video duration…\n";
@@ -239,6 +236,7 @@ public partial class MainWindow : Window
             Logs.Text += $"[Info] Duration: {_videoDurationSec:F1}s\n";
 
             // 10) run the external ffmpeg
+            Logs.Text += $"[Info] Rendering...\n";
             var mergeProgress = new Progress<double>(p =>
                 Dispatcher.UIThread.Post(() => ProgressBar.Value = p * 100)
             );
@@ -247,7 +245,7 @@ public partial class MainWindow : Window
                 ffmpegExe,
                 tempVideo,
                 tempAudio,
-                muxedFile ?? throw new InvalidOperationException(),
+                _muxedFile ?? throw new InvalidOperationException(),
                 mergeProgress,
                 _ => Dispatcher.UIThread.Post(() => { })
             );
@@ -260,7 +258,8 @@ public partial class MainWindow : Window
             );
             
             ProgressBar.Value = 100;
-            Logs.Text += $"[Info] Remux complete: {muxedFile}\n";
+            Logs.Text += $"[Info] Remux complete: {_muxedFile}\n";
+            ShowFileButton.IsEnabled = true;
         }
         catch (Exception ex)
         {
@@ -275,9 +274,34 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ShowFileInFinder_Click(object? sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_muxedFile) || !File.Exists(_muxedFile))
+        {
+            Logs.Text += $"[Error] Unable to find: {_muxedFile}\n";
+            return;
+        }
+        
+        try
+        {
+            // macOS: open + reveal
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = "open",
+                Arguments       = $"-R \"{_muxedFile}\"",
+                UseShellExecute = false,
+                CreateNoWindow  = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            UrlBox.Text += "[Error] Could not open file location\n";
+            UrlBox.Text += $"[Error] {ex.Message}\n";
+        }
+    }
+    
     private async Task<double> GetVideoDurationAsync(string videoPath)
     {
-        // Build ffprobe args: JSON output with format.duration
         var psi = new ProcessStartInfo
         {
             FileName            = Path.Combine(AppContext.BaseDirectory, "ffmpeg", "ffprobe"),
@@ -291,7 +315,7 @@ public partial class MainWindow : Window
         if (proc == null)
             throw new InvalidOperationException("Could not start ffprobe.");
     
-        string json = await proc.StandardOutput.ReadToEndAsync();
+        var json = await proc.StandardOutput.ReadToEndAsync();
         await proc.WaitForExitAsync();
     
         using var doc = JsonDocument.Parse(json);
@@ -306,7 +330,6 @@ public partial class MainWindow : Window
         return seconds;
     }
 
-    
     private Task RunFfmpegMergeAsync(
         string ffmpegExe,
         string videoPath,
@@ -341,19 +364,14 @@ public partial class MainWindow : Window
 
             // Look for "time=HH:MM:SS.millis" in stderr
             var m = Regex.Match(e.Data, @"time=(\d+):(\d+):(\d+\.?\d*)");
-            if (m.Success)
-            {
-                double hours   = double.Parse(m.Groups[1].Value);
-                double minutes = double.Parse(m.Groups[2].Value);
-                double seconds = double.Parse(m.Groups[3].Value);
-                // total seconds elapsed
-                double elapsed = hours * 3600 + minutes * 60 + seconds;
-
-                // We need the total video duration to compute percent.
-                // Let's assume you captured that earlier:
-                double totalSec = _videoDurationSec; 
-                progress.Report(elapsed / totalSec);
-            }
+            if (!m.Success) return;
+            
+            var hours   = double.Parse(m.Groups[1].Value);
+            var minutes = double.Parse(m.Groups[2].Value);
+            var seconds = double.Parse(m.Groups[3].Value);
+            var elapsed = hours * 3600 + minutes * 60 + seconds;
+            var totalSec = _videoDurationSec; 
+            progress.Report(elapsed / totalSec);
         };
 
         proc.Exited += (_, _) =>
@@ -370,9 +388,6 @@ public partial class MainWindow : Window
         return tcs.Task;
     }
     
-    /// <summary>
-    /// Shows a simple one‐button dialog with the given message.
-    /// </summary>
     private async Task ShowDialog(string message, int width =300, int height= 150)
     {
         var dialog = new Window
@@ -408,4 +423,3 @@ public partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 }
-    

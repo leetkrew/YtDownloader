@@ -13,16 +13,26 @@
         <TextBlock Grid.Row="0" Text="Enter YouTube URL:"/>
         <TextBox   Grid.Row="0" Name="UrlBox"
                    Margin="0,20,0,0"
-                   Watermark="https://youtube.com/..."
+                   Watermark="https://www.youtube.com/watch?v=0v37NNdjWKU"
                    HorizontalAlignment="Stretch"/>
 
-        <!-- Download button row -->
-        <Button    Grid.Row="1" Name="DownloadButton"
-                   Content="Download"
-                   Click="Download_Click"
-                   HorizontalAlignment="Left"
-                   Width="100"/>
-
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="10" Spacing="8">
+            <!-- Download button row -->
+            <Button    Grid.Row="1" Name="DownloadButton"
+                       Content="Download"
+                       Click="Download_Click"
+                       HorizontalAlignment="Left"
+                       HorizontalContentAlignment="Center"
+                       Width="100"/>
+            <Button    Grid.Row="1" Name="ShowFileButton"
+                       Content="Show in Finder"
+                       Click="ShowFileInFinder_Click"
+                       HorizontalAlignment="Left"
+                       HorizontalContentAlignment="Center"
+                       IsEnabled="False"
+                       Width="150"/>
+        </StackPanel>
+        
         <!-- Progress bar row -->
         <ProgressBar Grid.Row="2" Name="ProgressBar"
                      Minimum="0" Maximum="100"
